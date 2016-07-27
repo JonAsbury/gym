@@ -10,7 +10,7 @@ import sys, gym
 env = gym.make('LunarLander-v2' if len(sys.argv)<2 else sys.argv[1])
 
 ACTIONS = env.action_space.n
-ROLLOUT_TIME = 1000
+ROLLOUT_TIME = 2000
 SKIP_CONTROL = 0    # Use previous control decision SKIP_CONTROL times, that's how you
                     # can test what skip is still usable.
 

@@ -77,6 +77,12 @@ register(
     reward_threshold=-100
 )
 
+register(
+    id='Sailing-v0',
+    entry_point='gym.envs.classic_control:SailingEnv',
+    timestep_limit=5000,
+)
+
 # Box2d
 # ----------------------------------------
 

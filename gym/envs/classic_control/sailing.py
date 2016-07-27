@@ -1,0 +1,170 @@
+"""
+https://
+"""
+
+import math
+import gym
+from gym import spaces
+from gym.utils import seeding
+import numpy as np
+
+def unit_vector(angle):
+    return np.array([np.cos(angle), np.sin(angle)])
+
+def angle_between(v1, v2):
+    """ Returns the angle in radians between vectors 'v1' and 'v2'    """
+    return np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+
+def pt_in_rect(pt,r):
+    return pt[0] >= r[1] and pt[0] < r[3] and pt[1] >= r[0] and pt[1] < r[2]
+
+class SailingEnv(gym.Env):
+    metadata = {
+        'render.modes': ['human', 'rgb_array'],
+        'video.frames_per_second': 30
+    }
+
+    def __init__(self):
+
+        self.viewer = None
+
+        self.min_x = 0.0
+        self.max_x = 100.0
+        self.min_y = 0.0
+        self.max_y = 100.0
+
+        self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y,-1.0,-1.0])
+        self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y,1.0,1.0])
+
+        self.wind = np.array([0.0,-5.0])
+
+        self.wind_drag = 0.0001
+        self.water_drag = 0.001
+
+        self.boat_m = 500.0
+        
+        self.viewer = None
+
+        self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.75 ])
+
+        self.action_space = spaces.Discrete(3)
+        self.observation_space = spaces.Box(self.low, self.high)
+
+        self.besttotalreward = self.totalreward = -100000.0
+        self.stepnum = 0
+
+        self._seed()
+        self.reset()
+
+    def _seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
+
+    def _step(self, action):
+        self.stepnum += 1
+
+        if action==1:
+            self.boat_heading += 0.01
+        elif action==2:
+            self.boat_heading += -0.01
+
+        apparent_wind = self.wind - self.boat_v
+        unit_heading = unit_vector(self.boat_heading)
+        theta = angle_between(apparent_wind, -unit_heading )
+
+        # fdrive is the force driving the boat forward which is dependent on the apparent wind angle.
+        # A simple quadratic with zeros at -0.4 and +4.0 radians is a pretty good approximation
+        # (for more info google sailing polar diagrams)
+        # the absolute value o ftheta is used because it the driving force doesn't matter whether we are on
+        # starboard tack (positive values of theta) or port tack (negative values of theta)
+        fdrive = -(abs(theta) - 0.4) * (abs(theta) - 4.0) * 0.7 * unit_vector(self.boat_heading)   # approximation of polar drive
+
+        vforward = np.dot(self.boat_v,  unit_heading) * unit_heading
+        vperpendicular = self.boat_v - vforward
+
+        # the drag force is proportional to the square of the speed in the opposite direction
+        # multiplying a vector by the norm of its length efectively squares its length
+        fdrag = -vforward * np.linalg.norm(vforward) * 50.0  # opposite to direction of movement
+        fkeel = -vperpendicular * np.linalg.norm(vperpendicular) * 50000.0
+
+        self.boat_v += (fdrive + fdrag + fkeel)  / self.boat_m
+#        print "th:%.1f drive:%.1f drag:%.1f v:%.1f"%(theta, np.linalg.norm(fdrive), np.linalg.norm(fdrag), np.linalg.norm(self.boat_v))
+
+        self.boat += self.boat_v
+
+        previous_distance_to_target = self.distance_to_target
+        self.distance_to_target = np.linalg.norm(self.boat - self.target)
+        reward = previous_distance_to_target - self.distance_to_target -0.01
+
+        out_of_bounds = self.boat[0] < self.min_x or self.boat[0] > self.max_x or self.boat[1] < self.min_y or self.boat[1] > self.max_y
+        hit_target = pt_in_rect(self.boat, [self.target[1] - 2, self.target[0] - 2, self.target[1] + 2, self.target[0] + 2])
+
+        if hit_target:
+            reward += 100
+
+        done = out_of_bounds or hit_target
+
+        self.totalreward += reward
+        self.state = action
+        return np.concatenate((self.boat,self.boat_v,self.target,unit_heading)), reward, done, {}
+
+    def _reset(self):
+        #        print "Total reward:", self.totalreward
+        if self.stepnum > 0 and self.totalreward > self.besttotalreward:
+            self.besttotalreward = self.totalreward
+            print "New Highscore:", self.besttotalreward
+        self.totalreward = 0.0
+        self.stepnum = 0
+
+        self.boat = np.array([(self.min_x + self.max_x) / 2, (self.min_y + self.max_y) / 4])
+
+        self.boat_v = np.array([0.0, 0.0])
+        self.boat_heading = 0.5 * np.pi
+
+        self.distance_to_target = np.linalg.norm(self.boat - self.target)
+
+        return np.concatenate((self.boat,self.boat_v,self.target,unit_vector(self.boat_heading)))
+
+    def _render(self, mode='human', close=False):
+        if close:
+            if self.viewer is not None:
+                self.viewer.close()
+                self.viewer = None
+            return
+
+        screen_width = 600
+        screen_height = 600
+        boatwidth=8
+        boatlength=20
+
+        world_width = self.max_x - self.min_x
+        world_height = self.max_y - self.min_y
+        scale = screen_height/world_height
+        
+
+        from gym.envs.classic_control import rendering
+        if self.viewer is None:
+            self.viewer = rendering.Viewer(screen_width, screen_height)
+
+            l, r, t, m, b = -boatwidth / 2, boatwidth / 2, -boatlength / 2, 0, boatlength / 2
+
+            boat = rendering.FilledPolygon([(b, 0), (m, l), (t, l), (t, r), (m, r)])
+            boat.add_attr(rendering.Transform(translation=(0, 0)))
+            self.boattrans = rendering.Transform()
+            boat.add_attr(self.boattrans)
+            self.viewer.add_geom(boat)
+
+            target = rendering.make_circle()
+            target.set_color(0,.8,0)
+            target.add_attr(rendering.Transform(translation=(scale * self.target[0], scale * self.target[1])))
+            self.targettrans = rendering.Transform()
+            boat.add_attr(self.targettrans)
+            self.viewer.add_geom(target)
+
+        self.boattrans.set_translation(self.boat[0] * scale, self.boat[1] * scale)
+        self.boattrans.set_rotation(self.boat_heading)
+
+        self.viewer.draw_label(self.spec.id,7,screen_height-25,color=(0,0,0,255), font_size=20, anchor_y='baseline')
+        self.viewer.draw_label('episode:%d step:%d score:%.1f hi-score:%.1f'%(self._monitor.episode_id, self.stepnum, self.totalreward, self.besttotalreward),screen_width-10,screen_height-25,color=(0,0,0,255), font_size=12, anchor_x='right', anchor_y='baseline')
+
+        return self.viewer.render(return_rgb_array=mode == 'rgb_array')

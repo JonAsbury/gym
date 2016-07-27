@@ -130,6 +130,11 @@ class Viewer(object):
         self.add_onetime(geom)
         return geom
 
+    def draw_label(self, txt, x ,y, **attrs):
+        geom = Label(txt, x, y, **attrs)
+        self.add_onetime(geom)
+        return geom
+
     def get_array(self):
         self.window.flip()
         image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
@@ -302,6 +307,15 @@ class Image(Geom):
         self.flip = False
     def render1(self):
         self.img.blit(-self.width/2, -self.height/2, width=self.width, height=self.height)
+
+class Label(Geom):
+    def __init__(self, txt, x, y, **attrs):
+        Geom.__init__(self)
+        self.label = pyglet.text.Label(txt, x=x, y=y, **attrs)
+
+    def render1(self):
+        self.label.draw()
+
 
 # ================================================================
 
