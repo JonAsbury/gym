@@ -1,22 +1,27 @@
+from __future__ import print_function
+
 """
 https://
 """
 
-import math
 import gym
 from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
+
 def unit_vector(angle):
     return np.array([np.cos(angle), np.sin(angle)])
+
 
 def angle_between(v1, v2):
     """ Returns the angle in radians between vectors 'v1' and 'v2'    """
     return np.arccos(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
 
-def pt_in_rect(pt,r):
-    return pt[0] >= r[1] and pt[0] < r[3] and pt[1] >= r[0] and pt[1] < r[2]
+
+def pt_in_rect(pt, r):
+    return r[1] <= pt[0] < r[3] and r[0] <= pt[1] < r[2]
+
 
 def perpendicular(a):
     b = np.empty_like(a)
@@ -27,7 +32,8 @@ def perpendicular(a):
 
 TARGETRADIUS = 2.0
 STEPS_PER_SECOND = 30
-SHOAL = 10.0 # negative rewards for sailing into the shoal
+SHOAL = 10.0  # negative rewards for sailing into the shoal
+
 
 class SailingEnv(gym.Env):
     metadata = {
@@ -50,19 +56,19 @@ class SailingEnv(gym.Env):
         self.shoal_min_y = self.min_y + SHOAL
         self.shoal_max_y = self.max_x - SHOAL
 
-        self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y,-1.0,-1.0])
-        self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y,1.0,1.0])
+        self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y, -1.0, -1.0])
+        self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y, 1.0, 1.0])
 
-        self.wind = np.array([0.0,-5.0])
+        self.wind = np.array([0.0, -5.0])
 
         self.wind_drag = 0.0001
         self.water_drag = 0.001
 
         self.boat_m = 3000.0
-        
+
         self.viewer = None
 
-        self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.75 ])
+        self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.75])
 
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(self.low, self.high)
@@ -82,36 +88,36 @@ class SailingEnv(gym.Env):
 
         unit_heading = unit_vector(self.boat_heading)
 
-        speed = np.dot(self.boat_v,  unit_heading)   # positive means forward negative means backward
-        if speed>0:
+        speed = np.dot(self.boat_v, unit_heading)  # positive means forward negative means backward
+        if speed > 0:
             sqrtspeed = np.sqrt(np.linalg.norm(self.boat_v))
         else:
             sqrtspeed = -np.sqrt(np.linalg.norm(self.boat_v))
 
-        print "speed:%.3f heading:%.3f"%(speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 *np.pi))
-        if action==1:
+        # print "speed:%.3f heading:%.3f"%(speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 *np.pi))
+        if action == 1:
             self.boat_heading += 0.025 * sqrtspeed
             fcentripetal = 80.0 * sqrtspeed
-        elif action==2:
+        elif action == 2:
             self.boat_heading -= 0.02 * sqrtspeed
             fcentripetal = -80.0 * sqrtspeed
         else:
             fcentripetal = 0.0
 
-        unit_heading = unit_vector(self.boat_heading) # new heading
+        unit_heading = unit_vector(self.boat_heading)  # new heading
         unit_perp = perpendicular(unit_heading)
 
         apparent_wind = self.wind - self.boat_v
-        theta = angle_between(apparent_wind, -unit_heading )
+        theta = angle_between(apparent_wind, -unit_heading)
 
         # fdrive is the force driving the boat forward which is dependent on the apparent wind angle.
         # A simple quadratic with zeros at +0.6 (35 degrees) and +4.0 radians is a pretty good approximation
         # (for more info google sailing polar diagrams)
         # the absolute value o ftheta is used because it the driving force doesn't matter whether we are on
         # starboard tack (positive values of theta) or port tack (negative values of theta)
-        fdrive = -(abs(theta) - 0.6) * (abs(theta) - 4.0) * 0.5 * unit_vector(self.boat_heading)   # approximation of polar drive
+        fdrive = -(abs(theta) - 0.6) * (abs(theta) - 4.0) * 0.5 * unit_vector(self.boat_heading)
 
-        vforward = np.dot(self.boat_v,  unit_heading) * unit_heading
+        vforward = np.dot(self.boat_v, unit_heading) * unit_heading
         vperpendicular = self.boat_v - vforward
 
         # the drag force is proportional to the square of the speed in the opposite direction
@@ -120,23 +126,26 @@ class SailingEnv(gym.Env):
         fkeel = -vperpendicular * np.linalg.norm(vperpendicular) * 1200.0
         fperp = unit_perp * fcentripetal * np.linalg.norm(self.boat_v)
 
-
-        self.boat_v += (fdrive + fdrag + fkeel + fperp)  / self.boat_m
-        #self.boat_v = unit_heading * ( np.linalg.norm(self.boat_v) + (np.linalg.norm(fdrive) - np.linalg.norm(fdrag))/self.boat_m  )
-#        print "th:%.1f drive:%.1f drag:%.1f v:%.1f"%(theta, np.linalg.norm(fdrive), np.linalg.norm(fdrag), np.linalg.norm(self.boat_v))
+        self.boat_v += (fdrive + fdrag + fkeel + fperp) / self.boat_m
+        # self.boat_v = unit_heading * ( np.linalg.norm(self.boat_v) + (np.linalg.norm(fdrive) -
+        # np.linalg.norm(fdrag))/self.boat_m  )
+        # print "th:%.1f drive:%.1f drag:%.1f v:%.1f"%(theta, np.linalg.norm(fdrive), np.linalg.norm(fdrag),
+        # np.linalg.norm(self.boat_v))
 
         self.boat += self.boat_v
 
         previous_distance_to_target = self.distance_to_target
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
-        reward = previous_distance_to_target - self.distance_to_target -0.01
+        reward = previous_distance_to_target - self.distance_to_target - 0.01
 
-        if self.boat[0] < self.shoal_min_x or self.boat[0] > self.shoal_max_x or self.boat[1] < self.shoal_min_y or self.boat[1] > self.shoal_max_y:
+        if self.boat[0] < self.shoal_min_x or self.boat[0] > self.shoal_max_x or self.boat[1] < self.shoal_min_y or \
+                self.boat[1] > self.shoal_max_y:
             reward -= 1.0
 
-
-        out_of_bounds = self.boat[0] < self.min_x or self.boat[0] > self.max_x or self.boat[1] < self.min_y or self.boat[1] > self.max_y
-        hit_target = pt_in_rect(self.boat, [self.target[1] - TARGETRADIUS, self.target[0] - TARGETRADIUS, self.target[1] + TARGETRADIUS, self.target[0] + TARGETRADIUS])
+        out_of_bounds = self.boat[0] < self.min_x or self.boat[0] > self.max_x or self.boat[1] < self.min_y or \
+            self.boat[1] > self.max_y
+        hit_target = pt_in_rect(self.boat, [self.target[1] - TARGETRADIUS, self.target[0] - TARGETRADIUS,
+                                            self.target[1] + TARGETRADIUS, self.target[0] + TARGETRADIUS])
 
         if hit_target:
             reward += 100.0
@@ -145,13 +154,13 @@ class SailingEnv(gym.Env):
 
         self.totalreward += reward
         self.state = action
-        return np.concatenate((self.boat,self.boat_v,self.target,unit_heading)), reward, done, {}
+        return np.concatenate((self.boat, self.boat_v, self.target, unit_heading)), reward, done, {}
 
     def _reset(self):
         #        print "Total reward:", self.totalreward
         if self.stepnum > 0 and self.totalreward > self.besttotalreward:
             self.besttotalreward = self.totalreward
-            print "New Highscore:", self.besttotalreward
+            print("New Highscore: %.1f" % self.besttotalreward)
         self.totalreward = 0.0
         self.stepnum = 0
 
@@ -162,7 +171,7 @@ class SailingEnv(gym.Env):
 
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
 
-        return np.concatenate((self.boat,self.boat_v,self.target,unit_vector(self.boat_heading)))
+        return np.concatenate((self.boat, self.boat_v, self.target, unit_vector(self.boat_heading)))
 
     def _render(self, mode='human', close=False):
         if close:
@@ -174,10 +183,10 @@ class SailingEnv(gym.Env):
         screen_width = 600
         screen_height = 600
 
-        world_width = self.max_x - self.min_x
+        # world_width = self.max_x - self.min_x
         world_height = self.max_y - self.min_y
-        scale = screen_height/world_height
-        
+        scale = screen_height / world_height
+
         boatwidth = 2.5 * scale
         boatlength = 6.0 * scale
 
@@ -186,7 +195,7 @@ class SailingEnv(gym.Env):
             self.viewer = rendering.Viewer(screen_width, screen_height)
 
             target = rendering.make_circle(TARGETRADIUS * scale)
-            target.set_color(0,.8,0)
+            target.set_color(0, .8, 0)
             target.add_attr(rendering.Transform(translation=(scale * self.target[0], scale * self.target[1])))
             self.viewer.add_geom(target)
 
@@ -198,11 +207,14 @@ class SailingEnv(gym.Env):
             boat.add_attr(self.boattrans)
             self.viewer.add_geom(boat)
 
-
         self.boattrans.set_translation(self.boat[0] * scale, self.boat[1] * scale)
         self.boattrans.set_rotation(self.boat_heading)
 
-        self.viewer.draw_label(self.spec.id,7,screen_height-25,color=(0,0,0,255), font_size=20, anchor_y='baseline')
-        self.viewer.draw_label('episode:%d step:%d score:%.1f hi-score:%.1f'%(self._monitor.episode_id, self.stepnum, self.totalreward, self.besttotalreward),screen_width-10,screen_height-25,color=(0,0,0,255), font_size=12, anchor_x='right', anchor_y='baseline')
+        self.viewer.draw_label(self.spec.id, 7, screen_height - 25, color=(0, 0, 0, 255), font_size=20,
+                               anchor_y='baseline')
+        self.viewer.draw_label('episode:%d step:%d score:%.1f hi-score:%.1f' % (
+            self._monitor.episode_id, self.stepnum, self.totalreward, self.besttotalreward), screen_width - 10,
+            screen_height - 25, color=(0, 0, 0, 255), font_size=12, anchor_x='right',
+            anchor_y='baseline')
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
