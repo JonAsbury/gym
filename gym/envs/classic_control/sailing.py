@@ -37,7 +37,8 @@ SHOAL = 10.0  # negative rewards for sailing into the shoal
 SAILCOEFF = 7.0  # Newtons
 RUDDER_COEFF = 0.002
 MAX_ANGULAR_VELOCITY = 60.0/360.0 * 2 * np.pi / STEPS_PER_SECOND  # radians per second
-
+BOAT_BEAM = 2.5
+BOAT_LENGTH = 6.0
 
 class SailingEnv(gym.Env):
     metadata = {
@@ -171,6 +172,7 @@ class SailingEnv(gym.Env):
         self.totalreward += reward
         self.state = action
 
+        # add to the track every second only if we are rendering
         if self.viewer is not None:
             if self.stepnum % STEPS_PER_SECOND == 0:
                 self.track.append((self.boat[0], self.boat[1]))
@@ -184,14 +186,14 @@ class SailingEnv(gym.Env):
         self.totalreward = 0.0
         self.stepnum = 0
 
+        # set starting boat position, velocity, heading and angular velocity
         self.boat = np.array([(self.min_x + self.max_x) / 2, (self.min_y + self.max_y) / 3])
-
         self.boat_v = np.array([0.0, 0.0])
         self.boat_heading = 0.5 * np.pi
         self.angular_velocity = 0.0
 
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
-        self.track = []
+        self.track = []     # store position every second so we can draw the track in render
 
         return np.concatenate((self.boat, self.boat_v, self.target, unit_vector(self.boat_heading)))
 
@@ -210,8 +212,8 @@ class SailingEnv(gym.Env):
         scale = screen_width / (self.max_x - self.min_x)
         screen_height = int(scale * (self.max_y - self.min_y))
 
-        boatwidth = 2.5 * scale
-        boatlength = 6.0 * scale
+        boatwidth = BOAT_BEAM * scale
+        boatlength = BOAT_LENGTH * scale
 
         from gym.envs.classic_control import rendering
         if self.viewer is None:
@@ -233,6 +235,9 @@ class SailingEnv(gym.Env):
         self.boattrans.set_translation(self.boat[0] * scale, self.boat[1] * scale)
         self.boattrans.set_rotation(self.boat_heading)
 
+        # should really only update the polyline geom when it has changed
+        # even better would to use some vertex buffer magic, but that would
+        # require extensive chnages to rendering.py
         track = self.viewer.draw_polyline(self.track)
         track.set_color(0.8,0.8,0.8)
         track.add_attr(rendering.Transform(scale=(scale,scale)))
