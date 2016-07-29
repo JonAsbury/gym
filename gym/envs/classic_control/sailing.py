@@ -8,6 +8,7 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 import numpy as np
+import time
 
 
 def unit_vector(angle):
@@ -31,11 +32,11 @@ def perpendicular(a):
 
 
 TARGETRADIUS = 2.0
-STEPS_PER_SECOND = 30
+STEPS_PER_SECOND = 60
 SHOAL = 10.0  # negative rewards for sailing into the shoal
 SAILCOEFF = 7.0  # Newtons
 RUDDER_COEFF = 0.002
-MAX_ANGULAR_VELOCITY = 30.0/360.0 * 2 * np.pi / STEPS_PER_SECOND  # radians per second
+MAX_ANGULAR_VELOCITY = 60.0/360.0 * 2 * np.pi / STEPS_PER_SECOND  # radians per second
 
 
 class SailingEnv(gym.Env):
@@ -62,7 +63,7 @@ class SailingEnv(gym.Env):
         self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y, -1.0, -1.0])
         self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y, 1.0, 1.0])
 
-        self.wind = np.array([0.0, -5.0]) / STEPS_PER_SECOND
+        self.wind = np.array([0.0, -10.0]) / STEPS_PER_SECOND
 
         self.wind_drag = 0.0001
         self.water_drag = 0.001
@@ -79,6 +80,7 @@ class SailingEnv(gym.Env):
         self.besttotalreward = self.totalreward = -100000.0
         self.stepnum = 0
 
+        self.time_last_frame = time.time()
         self._seed()
         self.reset()
 
@@ -118,11 +120,11 @@ class SailingEnv(gym.Env):
         theta = angle_between(apparent_wind, -unit_heading)
 
         # fdrive is the force driving the boat forward which is dependent on the apparent wind angle.
-        # A simple quadratic with zeros at +0.5 (29 degrees apparent) and +4.0 radians is a pretty good approximation
+        # A simple quadratic with zeros at +0.4 (23 degrees apparent) and +4.0 radians is a pretty good approximation
         # (for more info google sailing polar diagrams)
         # the absolute value o ftheta is used because it the driving force doesn't matter whether we are on
         # starboard tack (positive values of theta) or port tack (negative values of theta)
-        fdrive = -(abs(theta) - 0.5) * (abs(theta) - 4.0) * apparent_wind_speed * SAILCOEFF * unit_vector(self.boat_heading)
+        fdrive = -(abs(theta) - 0.4) * (abs(theta) - 4.0) * apparent_wind_speed * SAILCOEFF * unit_vector(self.boat_heading)
 
         print("speed:%1.2f heading:%3.1f appwindangle:%3.1f appwindspeed:%1.2f fdrive:%1.2f" % \
               (speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 * np.pi), theta * 360 / (2 * np.pi),
@@ -133,7 +135,7 @@ class SailingEnv(gym.Env):
 
         # the drag force is proportional to the square of the speed in the opposite direction
         # multiplying a vector by the norm of its length efectively squares its length
-        fdrag = -vforward * np.linalg.norm(vforward) * 50.0  # opposite to direction of movement
+        fdrag = -vforward * np.linalg.norm(vforward) * 200.0  # opposite to direction of movement
         fkeel = -vperpendicular * np.linalg.norm(vperpendicular) * 1200.0
         fperp = unit_perp * fcentripetal * np.linalg.norm(self.boat_v)
 
@@ -168,6 +170,10 @@ class SailingEnv(gym.Env):
 
         self.totalreward += reward
         self.state = action
+
+        if self.viewer is not None:
+            if self.stepnum % STEPS_PER_SECOND == 0:
+                self.track.append((self.boat[0], self.boat[1]))
         return np.concatenate((self.boat, self.boat_v, self.target, unit_heading)), reward, done, {}
 
     def _reset(self):
@@ -185,6 +191,7 @@ class SailingEnv(gym.Env):
         self.angular_velocity = 0.0
 
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
+        self.track = []
 
         return np.concatenate((self.boat, self.boat_v, self.target, unit_vector(self.boat_heading)))
 
@@ -194,6 +201,11 @@ class SailingEnv(gym.Env):
                 self.viewer.close()
                 self.viewer = None
             return
+
+        now = time.time()
+        print("fps:%.1f" % (1.0 / (now - self.time_last_frame)) )
+        self.time_last_frame = now
+
 
         screen_width = 600
         scale = screen_width / (self.max_x - self.min_x)
@@ -221,6 +233,10 @@ class SailingEnv(gym.Env):
 
         self.boattrans.set_translation(self.boat[0] * scale, self.boat[1] * scale)
         self.boattrans.set_rotation(self.boat_heading)
+
+        track = self.viewer.draw_polyline(self.track)
+        track.set_color(0.8,0.8,0.8)
+        track.add_attr(rendering.Transform(scale=(scale,scale)))
 
         self.viewer.draw_label(self.spec.id, 7, screen_height - 25, color=(0, 0, 0, 255), font_size=20,
                                anchor_y='baseline')
