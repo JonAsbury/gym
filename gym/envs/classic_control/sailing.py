@@ -33,6 +33,9 @@ def perpendicular(a):
 TARGETRADIUS = 2.0
 STEPS_PER_SECOND = 30
 SHOAL = 10.0  # negative rewards for sailing into the shoal
+SAILCOEFF = 7.0  # Newtons
+RUDDER_COEFF = 0.002
+MAX_ANGULAR_VELOCITY = 30.0/360.0 * 2 * np.pi / STEPS_PER_SECOND  # radians per second
 
 
 class SailingEnv(gym.Env):
@@ -47,7 +50,7 @@ class SailingEnv(gym.Env):
 
         # coordinates in metres
         self.min_x = 0.0
-        self.max_x = 150.0
+        self.max_x = 200.0
         self.min_y = 0.0
         self.max_y = 150.0
 
@@ -59,16 +62,16 @@ class SailingEnv(gym.Env):
         self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y, -1.0, -1.0])
         self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y, 1.0, 1.0])
 
-        self.wind = np.array([0.0, -5.0])
+        self.wind = np.array([0.0, -5.0]) / STEPS_PER_SECOND
 
         self.wind_drag = 0.0001
         self.water_drag = 0.001
 
-        self.boat_m = 3000.0
+        self.boat_m = 3000.0   # kg
 
         self.viewer = None
 
-        self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.75])
+        self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.70])
 
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(self.low, self.high)
@@ -95,27 +98,35 @@ class SailingEnv(gym.Env):
             sqrtspeed = -np.sqrt(np.linalg.norm(self.boat_v))
 
         # print "speed:%.3f heading:%.3f"%(speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 *np.pi))
+        self.angular_velocity *= 0.95
         if action == 1:
-            self.boat_heading += 0.025 * sqrtspeed
-            fcentripetal = 80.0 * sqrtspeed
+            if self.angular_velocity<MAX_ANGULAR_VELOCITY:
+                self.angular_velocity += RUDDER_COEFF * sqrtspeed
         elif action == 2:
-            self.boat_heading -= 0.02 * sqrtspeed
-            fcentripetal = -80.0 * sqrtspeed
-        else:
-            fcentripetal = 0.0
+            if self.angular_velocity>-MAX_ANGULAR_VELOCITY:
+                self.angular_velocity -= RUDDER_COEFF * sqrtspeed
+
+        # turn the boat by adjusting heading and applying a centripetal force to the centre of the turn
+        self.boat_heading += self.angular_velocity
+        fcentripetal = self.angular_velocity * self.boat_m
 
         unit_heading = unit_vector(self.boat_heading)  # new heading
         unit_perp = perpendicular(unit_heading)
 
         apparent_wind = self.wind - self.boat_v
+        apparent_wind_speed = np.linalg.norm(apparent_wind)
         theta = angle_between(apparent_wind, -unit_heading)
 
         # fdrive is the force driving the boat forward which is dependent on the apparent wind angle.
-        # A simple quadratic with zeros at +0.6 (35 degrees) and +4.0 radians is a pretty good approximation
+        # A simple quadratic with zeros at +0.5 (29 degrees apparent) and +4.0 radians is a pretty good approximation
         # (for more info google sailing polar diagrams)
         # the absolute value o ftheta is used because it the driving force doesn't matter whether we are on
         # starboard tack (positive values of theta) or port tack (negative values of theta)
-        fdrive = -(abs(theta) - 0.6) * (abs(theta) - 4.0) * 0.5 * unit_vector(self.boat_heading)
+        fdrive = -(abs(theta) - 0.5) * (abs(theta) - 4.0) * apparent_wind_speed * SAILCOEFF * unit_vector(self.boat_heading)
+
+        print("speed:%1.2f heading:%3.1f appwindangle:%3.1f appwindspeed:%1.2f fdrive:%1.2f" % \
+              (speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 * np.pi), theta * 360 / (2 * np.pi),
+               apparent_wind_speed * STEPS_PER_SECOND, np.linalg.norm(fdrive)))
 
         vforward = np.dot(self.boat_v, unit_heading) * unit_heading
         vperpendicular = self.boat_v - vforward
@@ -140,7 +151,7 @@ class SailingEnv(gym.Env):
 
         if self.boat[0] < self.shoal_min_x or self.boat[0] > self.shoal_max_x or self.boat[1] < self.shoal_min_y or \
                 self.boat[1] > self.shoal_max_y:
-            reward -= 1.0
+            reward -= 0.1
 
         out_of_bounds = self.boat[0] < self.min_x or self.boat[0] > self.max_x or self.boat[1] < self.min_y or \
             self.boat[1] > self.max_y
@@ -149,6 +160,9 @@ class SailingEnv(gym.Env):
 
         if hit_target:
             reward += 100.0
+
+        if out_of_bounds:
+            reward -= 400.0
 
         done = out_of_bounds or hit_target
 
@@ -168,6 +182,7 @@ class SailingEnv(gym.Env):
 
         self.boat_v = np.array([0.0, 0.0])
         self.boat_heading = 0.5 * np.pi
+        self.angular_velocity = 0.0
 
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
 
@@ -181,11 +196,8 @@ class SailingEnv(gym.Env):
             return
 
         screen_width = 600
-        screen_height = 600
-
-        # world_width = self.max_x - self.min_x
-        world_height = self.max_y - self.min_y
-        scale = screen_height / world_height
+        scale = screen_width / (self.max_x - self.min_x)
+        screen_height = int(scale * (self.max_y - self.min_y))
 
         boatwidth = 2.5 * scale
         boatlength = 6.0 * scale
