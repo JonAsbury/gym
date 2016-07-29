@@ -126,9 +126,9 @@ class SailingEnv(gym.Env):
         # starboard tack (positive values of theta) or port tack (negative values of theta)
         fdrive = -(abs(theta) - 0.4) * (abs(theta) - 4.0) * apparent_wind_speed * SAILCOEFF * unit_vector(self.boat_heading)
 
-        print("speed:%1.2f heading:%3.1f appwindangle:%3.1f appwindspeed:%1.2f fdrive:%1.2f" % \
-              (speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 * np.pi), theta * 360 / (2 * np.pi),
-               apparent_wind_speed * STEPS_PER_SECOND, np.linalg.norm(fdrive)))
+        #print("speed:%1.2f heading:%3.1f appwindangle:%3.1f appwindspeed:%1.2f fdrive:%1.2f" % \
+        #      (speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 * np.pi), theta * 360 / (2 * np.pi),
+        #       apparent_wind_speed * STEPS_PER_SECOND, np.linalg.norm(fdrive)))
 
         vforward = np.dot(self.boat_v, unit_heading) * unit_heading
         vperpendicular = self.boat_v - vforward
@@ -202,10 +202,9 @@ class SailingEnv(gym.Env):
                 self.viewer = None
             return
 
-        now = time.time()
-        print("fps:%.1f" % (1.0 / (now - self.time_last_frame)) )
-        self.time_last_frame = now
-
+        #now = time.time()
+        #print("fps:%.1f" % (1.0 / (now - self.time_last_frame)) )
+        #self.time_last_frame = now
 
         screen_width = 600
         scale = screen_width / (self.max_x - self.min_x)
