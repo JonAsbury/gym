@@ -61,8 +61,8 @@ class SailingEnv(gym.Env):
         self.shoal_min_y = self.min_y + SHOAL
         self.shoal_max_y = self.max_x - SHOAL
 
-        self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y, -1.0, -1.0])
-        self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y, 1.0, 1.0])
+        self.low = np.array([self.min_x, self.min_y, -1000.0, -1000.0, self.min_x, self.min_y, -1.0, -1.0, -1000.0])
+        self.high = np.array([self.max_x, self.max_y, 1000.0, 1000.0, self.max_x, self.max_y, 1.0, 1.0, 1000.0])
 
         self.wind = np.array([0.0, -10.0]) / STEPS_PER_SECOND
 
@@ -176,7 +176,7 @@ class SailingEnv(gym.Env):
         if self.viewer is not None:
             if self.stepnum % STEPS_PER_SECOND == 0:
                 self.track.append((self.boat[0], self.boat[1]))
-        return np.concatenate((self.boat, self.boat_v, self.target, unit_heading)), reward, done, {}
+        return np.array(list(self.boat) + list(self.boat_v) + list(self.target) + list(unit_heading) + [self.angular_velocity]), reward, done, {}
 
     def _reset(self):
         #        print "Total reward:", self.totalreward
@@ -195,7 +195,8 @@ class SailingEnv(gym.Env):
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
         self.track = []     # store position every second so we can draw the track in render
 
-        return np.concatenate((self.boat, self.boat_v, self.target, unit_vector(self.boat_heading)))
+        return np.array(list(self.boat) + list(self.boat_v) + list(self.target) + list(unit_vector(self.boat_heading)) + \
+                        [self.angular_velocity] )
 
     def _render(self, mode='human', close=False):
         if close:
