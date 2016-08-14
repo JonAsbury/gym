@@ -2,9 +2,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 import numpy as np
+import weakref
 
 from gym import error, monitoring
-from gym.utils import closer
+from gym.utils import closer, reraise
 
 env_closer = closer.Closer()
 
@@ -47,11 +48,12 @@ class Env(object):
 
     def __new__(cls, *args, **kwargs):
         # We use __new__ since we want the env author to be able to
-        # override __init__ without remebering to call super.
+        # override __init__ without remembering to call super.
         env = super(Env, cls).__new__(cls)
         env._env_closer_id = env_closer.register(env)
         env._closed = False
         env._configured = False
+        env._unwrapped = None
 
         # Will be automatically set when creating an environment via 'make'
         env.spec = None
@@ -226,7 +228,60 @@ class Env(object):
         """
 
         self._configured = True
-        return self._configure(*args, **kwargs)
+
+        try:
+            return self._configure(*args, **kwargs)
+        except TypeError as e:
+            # It can be confusing if you have the wrong environment
+            # and try calling with unsupported arguments, since your
+            # stack trace will only show core.py.
+            if self.spec:
+                reraise(suffix='(for {})'.format(self.spec.id))
+            else:
+                raise
+
+    def build(self, extra_wrappers=None):
+        """[EXPERIMENTAL: may be removed in a later version of Gym] Builds an
+        environment by applying any provided wrappers, with the
+        outmost wrapper supplied first. This method is automatically
+        invoked by 'gym.make', and should be manually invoked if
+        instantiating an environment by hand.
+
+        Notes:
+            The default implementation will wrap the environment in the
+            list of wrappers provided in self.metadata['wrappers'], in reverse
+            order. So for example, given:
+
+            class FooEnv(gym.Env):
+                metadata = {
+                    'wrappers': [Wrapper1, Wrapper2]
+                }
+
+            Calling 'env.build' will return 'Wrapper1(Wrapper2(env))'.
+
+        Args:
+            extra_wrappers (Optional[list]): Any extra wrappers to apply to the wrapped instance
+
+        Returns:
+            gym.Env: A potentially wrapped environment instance.
+
+        """
+        wrappers = self.metadata.get('wrappers', [])
+        if extra_wrappers:
+            wrappers = wrappers + extra_wrappers
+
+        wrapped = self
+        for wrapper in reversed(wrappers):
+            wrapped = wrapper(wrapped)
+        return wrapped
+
+    @property
+    def unwrapped(self):
+        """Avoid refcycles by making this into a property."""
+        if self._unwrapped is not None:
+            return self._unwrapped
+        else:
+            return self
 
     def __del__(self):
         self.close()
@@ -237,10 +292,9 @@ class Env(object):
 # Space-related abstractions
 
 class Space(object):
-    """
-    Provides a classification state spaces and action spaces,
-    so you can write generic code that applies to any Environment.
-    E.g. to choose a random action.
+    """Defines the observation and action spaces, so you can write generic
+    code that applies to any Env. For example, you can choose a random
+    action.
     """
 
     def sample(self, seed=0):
@@ -265,3 +319,34 @@ class Space(object):
         """Convert a JSONable data type to a batch of samples from this space."""
         # By default, assume identity is JSONable
         return sample_n
+
+class Wrapper(Env):
+    def __init__(self, env):
+        self.env = env
+        self.metadata = env.metadata
+        self.action_space = env.action_space
+        self.observation_space = env.observation_space
+        self.reward_range = env.reward_range
+        self.spec = env.spec
+        self._unwrapped = env.unwrapped
+
+    def _step(self, action):
+        return self.env.step(action)
+
+    def _reset(self):
+        return self.env.reset()
+
+    def _render(self, mode='human', close=False):
+        return self.env.render(mode, close)
+
+    def _close(self):
+        return self.env.close()
+
+    def _configure(self, *args, **kwargs):
+        return self.env.configure(*args, **kwargs)
+
+    def _seed(self, seed=None):
+        return self.env.seed(seed)
+
+    def __str__(self):
+        return '<{}{} instance>'.format(type(self).__name__, self.env)
