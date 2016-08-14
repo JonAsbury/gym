@@ -77,7 +77,7 @@ class SailingEnv(gym.Env):
 
         self.target = np.array([(self.max_x + self.min_x) / 2, (self.max_y - self.min_y) * 0.70])
 
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Box(low=-1., high=1., shape=(1,))
         self.observation_space = spaces.Box(self.low, self.high)
 
         self.besttotalreward = self.totalreward = -100000.0
@@ -104,12 +104,8 @@ class SailingEnv(gym.Env):
 
         # print "speed:%.3f heading:%.3f"%(speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 *np.pi))
         self.angular_velocity *= 0.95
-        if action == 1:
-            if self.angular_velocity<MAX_ANGULAR_VELOCITY:
-                self.angular_velocity += RUDDER_COEFF * sqrtspeed
-        elif action == 2:
-            if self.angular_velocity>-MAX_ANGULAR_VELOCITY:
-                self.angular_velocity -= RUDDER_COEFF * sqrtspeed
+        if self.angular_velocity < MAX_ANGULAR_VELOCITY:
+            self.angular_velocity += action[0] * RUDDER_COEFF * sqrtspeed
 
         # turn the boat by adjusting heading and applying a centripetal force to the centre of the turn
         self.boat_heading += self.angular_velocity
@@ -172,13 +168,23 @@ class SailingEnv(gym.Env):
         done = out_of_bounds or hit_target
 
         self.totalreward += reward
-        self.state = action
+        self.last_action = action
 
         # add to the track every second only if we are rendering
         if self.viewer is not None:
             if self.stepnum % STEPS_PER_SECOND == 0:
                 self.track.append((self.boat[0], self.boat[1]))
         return np.array(list(self.boat) + list(self.boat_v) + list(self.target) + list(unit_heading) + [self.angular_velocity]), reward, done, {}
+
+# TODO : change observations to be from a sailor's perspective:
+# boat_speed - speed through the water, which equals speed over ground because there is no current
+# boat heading - direction boat is currently headed in radians
+# angular velocity
+# apparent_wind_speed   - speed of the wind felt on the boat
+# apparent_wind_angle   - angle of the wind felt on the boat
+# target_angle          - angle of target relative to boat
+# depth                 - water depth below keel (ie boat hits bottom when 0)
+# gps position          - boatx, boaty
 
     def _reset(self):
         #        print "Total reward:", self.totalreward
@@ -253,3 +259,13 @@ class SailingEnv(gym.Env):
             anchor_y='baseline')
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
+
+class SailingDiscreteEnv(SailingEnv):
+    def __init__(self):
+        super(SailingDiscreteEnv,self).__init__()
+        self.action_space = spaces.Discrete(3)
+
+    def _step(self, action):
+        continuous_action = (0, 1., -1.)[action]
+        return super(SailingDiscreteEnv,self)._step([continuous_action])
+

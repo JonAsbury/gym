@@ -89,6 +89,12 @@ register(
     timestep_limit=5000,
 )
 
+register(
+    id='SailingDiscrete-v0',
+    entry_point='gym.envs.classic_control:SailingDiscreteEnv',
+    timestep_limit=5000,
+)
+
 # Box2d
 # ----------------------------------------
 
