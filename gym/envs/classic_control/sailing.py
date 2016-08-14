@@ -30,6 +30,8 @@ def perpendicular(a):
     b[1] = a[0]
     return b
 
+def reward_func(d):
+    return -d + 1000/(d+1)
 
 TARGETRADIUS = 2.0
 STEPS_PER_SECOND = 60
@@ -150,7 +152,7 @@ class SailingEnv(gym.Env):
 
         previous_distance_to_target = self.distance_to_target
         self.distance_to_target = np.linalg.norm(self.boat - self.target)
-        reward = previous_distance_to_target - self.distance_to_target - 0.01
+        reward = reward_func(self.distance_to_target) - reward_func(previous_distance_to_target) - 0.01
 
         if self.boat[0] < self.shoal_min_x or self.boat[0] > self.shoal_max_x or self.boat[1] < self.shoal_min_y or \
                 self.boat[1] > self.shoal_max_y:
