@@ -105,7 +105,7 @@ class SailingEnv(gym.Env):
         # print "speed:%.3f heading:%.3f"%(speed * STEPS_PER_SECOND, self.boat_heading * 360 / (2 *np.pi))
         self.angular_velocity *= 0.95
         if self.angular_velocity < MAX_ANGULAR_VELOCITY:
-            self.angular_velocity += action[0] * RUDDER_COEFF * sqrtspeed
+            self.angular_velocity += -action[0] * RUDDER_COEFF * sqrtspeed
 
         # turn the boat by adjusting heading and applying a centripetal force to the centre of the turn
         self.boat_heading += self.angular_velocity
@@ -266,6 +266,6 @@ class SailingDiscreteEnv(SailingEnv):
         self.action_space = spaces.Discrete(3)
 
     def _step(self, action):
-        continuous_action = (0, 1., -1.)[action]
+        continuous_action = (0, -1., 1.)[action]
         return super(SailingDiscreteEnv,self)._step([continuous_action])
 
